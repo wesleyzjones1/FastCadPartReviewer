@@ -101,6 +101,10 @@ class FastCadReviewerApp:
 
         self.fastcad = FastCadController(app_title=self.APP_TITLE)
 
+        # Whether we've entered 'center mode' where the active row is kept
+        # centered in the visible area while reviewing (until near the end).
+        self._center_mode = False
+
         self._build_ui()
         self._install_visual_effects()
         self._install_hotkeys()
@@ -174,7 +178,7 @@ class FastCadReviewerApp:
         event_loop_entry.pack(side=tk.LEFT, padx=(8, 16), ipady=3)
 
         tk.Label(bar, text="Zoom value:", bg=self.PANEL_ALT_BG_COLOR, fg=self.FG_COLOR, font=self.FONT_UI).pack(side=tk.LEFT)
-        self.zoom_value_var = tk.StringVar(value="2.5")
+        self.zoom_value_var = tk.StringVar(value="3")
         zoom_entry = tk.Entry(
             bar,
             textvariable=self.zoom_value_var,
@@ -388,6 +392,12 @@ class FastCadReviewerApp:
         )
         self.qty_text.grid(row=1, column=0, sticky="nsew")
         self.qty_text.tag_configure("current_line", background=self.ROW_HIGHLIGHT_COLOR)
+        self.qty_text.tag_configure("qty_mismatch", background=self.MISMATCH_BG_COLOR, foreground=self.FG_COLOR)
+        try:
+            # Ensure mismatch background takes visual precedence over current line tag.
+            self.qty_text.tag_raise("qty_mismatch", "current_line")
+        except Exception:
+            pass
 
         # --- DESCRIPTION pane ---
         desc_frame = tk.Frame(panes, bg=self.PANEL_ALT_BG_COLOR)
@@ -419,6 +429,11 @@ class FastCadReviewerApp:
         )
         self.desc_text.grid(row=1, column=0, sticky="nsew")
         self.desc_text.tag_configure("current_line", background=self.ROW_HIGHLIGHT_COLOR)
+        self.desc_text.tag_configure("qty_mismatch", background=self.MISMATCH_BG_COLOR, foreground=self.FG_COLOR)
+        try:
+            self.desc_text.tag_raise("qty_mismatch", "current_line")
+        except Exception:
+            pass
 
         # --- USAGE pane ---
         usage_frame = tk.Frame(panes, bg=self.PANEL_ALT_BG_COLOR)
@@ -450,6 +465,11 @@ class FastCadReviewerApp:
         )
         self.place_text.grid(row=1, column=0, sticky="nsew")
         self.place_text.tag_configure("current_line", background=self.ROW_HIGHLIGHT_COLOR)
+        self.place_text.tag_configure("qty_mismatch", background=self.MISMATCH_BG_COLOR, foreground=self.FG_COLOR)
+        try:
+            self.place_text.tag_raise("qty_mismatch", "current_line")
+        except Exception:
+            pass
 
         bold_font = tkfont.Font(font=self.place_text.cget("font")).copy()
         bold_font.configure(weight="bold")
@@ -668,6 +688,7 @@ class FastCadReviewerApp:
         self.current_index = 0
         self.paused = False
         self._set_running(True)
+        self._highlight_qty_mismatches()
         self._update_status_labels()
         self._send_to_fastcad(zoom_value)
 
@@ -686,6 +707,8 @@ class FastCadReviewerApp:
         self.current_index = -1
         self.paused = False
         self._set_running(False)
+        self._clear_qty_mismatch_highlights()
+        self._center_mode = False
         self._update_status_labels()
         self.status_var.set(reason)
 
@@ -875,6 +898,38 @@ class FastCadReviewerApp:
             press_bg=self.RESET_BTN_PRESS_COLOR,
         )
 
+    def _clear_qty_mismatch_highlights(self) -> None:
+        for text in (self.qty_text, self.desc_text, self.place_text):
+            text.tag_remove("qty_mismatch", "1.0", tk.END)
+
+    def _highlight_qty_mismatches(self) -> None:
+        """Highlight rows red when typed QTY does not match computed row count."""
+        self._clear_qty_mismatch_highlights()
+
+        qty_lines = [line.strip() for line in self.qty_text.get("1.0", tk.END).splitlines()]
+        # If QTY column is not pasted/provided, do not show mismatch errors.
+        if not any(qty_lines):
+            return
+
+        for group in self.groups:
+            row = group.source_line_index
+            typed_qty = qty_lines[row] if row < len(qty_lines) else ""
+            if not typed_qty:
+                continue
+            try:
+                qty_value = int(typed_qty)
+            except (TypeError, ValueError):
+                continue
+
+            expected_qty = len(group.components)
+            if qty_value != expected_qty:
+                line_no = row + 1
+                start = f"{line_no}.0"
+                end = f"{line_no}.end+1c"
+                self.qty_text.tag_add("qty_mismatch", start, end)
+                self.desc_text.tag_add("qty_mismatch", start, end)
+                self.place_text.tag_add("qty_mismatch", start, end)
+
     @staticmethod
     def _is_widget_enabled(widget: tk.Widget) -> bool:
         return str(widget.cget("state")) != tk.DISABLED
@@ -955,21 +1010,32 @@ class FastCadReviewerApp:
         within_pos = sum(1 for i in range(self.current_index + 1) if self.sequence[i][0] == group_idx)
         group_total = sum(1 for g, _ in self.sequence if g == group_idx)
 
-        # Read the QTY value for this line from the QTY pane.
+        # Read the QTY value for this line from the QTY pane. If the entire
+        # QTY column appears empty (user didn't paste it), hide the Expected
+        # QTY indicator and do not mark mismatches.
+        qty_lines_all = [line.strip() for line in self.qty_text.get("1.0", tk.END).splitlines()]
+        qty_column_present = any(qty_lines_all)
+
         line_no = group.source_line_index + 1
         raw_qty = self.qty_text.get(f"{line_no}.0", f"{line_no}.end").strip()
         expected_qty: Optional[int] = None
-        try:
-            expected_qty = int(raw_qty)
-        except (ValueError, TypeError):
-            pass  # leave expected_qty as None if the cell is blank or non-numeric
 
-        if expected_qty is not None:
-            self.expected_qty_var.set(f"Expected QTY: {expected_qty}")
-            mismatch = expected_qty != group_total
-        else:
-            self.expected_qty_var.set("Expected QTY: —")
+        if not qty_column_present:
+            # No QTY data pasted at all -> hide expected label and skip mismatch logic
+            self.expected_qty_var.set("")
             mismatch = False
+        else:
+            try:
+                expected_qty = int(raw_qty)
+            except (ValueError, TypeError):
+                expected_qty = None
+
+            if expected_qty is not None:
+                self.expected_qty_var.set(f"Expected QTY: {expected_qty}")
+                mismatch = expected_qty != group_total
+            else:
+                self.expected_qty_var.set("Expected QTY: —")
+                mismatch = False
 
         self.current_var.set(f"Current: {within_pos}/{group_total}")
         self.total_var.set(f"Total: {self.current_index + 1}/{len(self.sequence)}")
@@ -1070,9 +1136,50 @@ class FastCadReviewerApp:
                             )
                         break
 
-        self.qty_text.see(start)
-        self.desc_text.see(start)
-        self.place_text.see(start)
+        # Smart scrolling: compute desired top line and scroll the reference
+        # pane by an integer number of lines, then sync other panes to the
+        # reference fraction. Using integer scroll steps prevents small
+        # fractional rounding drift that previously allowed the centered line
+        # to slowly move out of view.
+        try:
+            ref = self.desc_text
+            top_line = int(ref.index("@0,0").split(".")[0])
+            line_h = tkfont.Font(font=ref.cget("font")).metrics("linespace") or 14
+            visible_lines = max(1, int(max(1, ref.winfo_height()) / line_h))
+            total_lines = int(ref.index("end-1c").split(".")[0])
+
+            current_middle = top_line + visible_lines // 2
+            if (not self._center_mode) and (line_no > current_middle):
+                self._center_mode = True
+
+            if self._center_mode and total_lines > visible_lines:
+                desired_top = max(1, line_no - visible_lines // 2)
+                max_top = max(1, total_lines - visible_lines + 1)
+                desired_top = min(desired_top, max_top)
+
+                # Scroll the reference widget by integer lines to reach desired_top.
+                delta = int(desired_top - top_line)
+                if delta != 0:
+                    ref.yview_scroll(delta, "units")
+                # Now get the canonical fraction and apply to all panes.
+                frac = ref.yview()[0]
+                for text in (self.qty_text, self.desc_text, self.place_text):
+                    try:
+                        text.yview_moveto(frac)
+                    except Exception:
+                        pass
+            else:
+                for text in (self.qty_text, self.desc_text, self.place_text):
+                    try:
+                        text.see(start)
+                    except Exception:
+                        pass
+        except Exception:
+            for text in (self.qty_text, self.desc_text, self.place_text):
+                try:
+                    text.see(start)
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # Cleanup
