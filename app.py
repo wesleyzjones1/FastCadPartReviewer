@@ -255,15 +255,51 @@ class FastCadReviewerApp:
         frame.pack(fill=tk.X, padx=12, pady=(4, 8))
         self.status_plain_bg = frame.cget("bg")
 
-        self.progress_var = tk.StringVar(value="")
-        tk.Label(
-            frame, textvariable=self.progress_var,
+        # Progress row: Current and Total centered; show Expected QTY only on mismatch
+        progress_row = tk.Frame(frame, bg=self.APP_BG_COLOR)
+        progress_row.pack(fill=tk.X)
+
+        # Center container approach: left and right columns are flexible,
+        # center column holds the label group so it remains centered.
+        progress_row.grid_columnconfigure(0, weight=1)
+        progress_row.grid_columnconfigure(2, weight=1)
+
+        center_group = tk.Frame(progress_row, bg=self.APP_BG_COLOR)
+        center_group.grid(row=0, column=1)
+
+        self.expected_qty_var = tk.StringVar(value="")
+        self.expected_qty_label = tk.Label(
+            center_group, textvariable=self.expected_qty_var,
             font=self.FONT_STATUS,
             justify=tk.CENTER,
             anchor="center",
             bg=self.APP_BG_COLOR,
             fg=self.FG_COLOR,
-        ).pack(fill=tk.X)
+        )
+
+        self.current_var = tk.StringVar(value="")
+        self.current_label = tk.Label(
+            center_group, textvariable=self.current_var,
+            font=self.FONT_STATUS,
+            justify=tk.CENTER,
+            anchor="center",
+            bg=self.APP_BG_COLOR,
+            fg=self.FG_COLOR,
+        )
+
+        self.total_var = tk.StringVar(value="")
+        self.total_label = tk.Label(
+            center_group, textvariable=self.total_var,
+            font=self.FONT_STATUS,
+            justify=tk.CENTER,
+            anchor="center",
+            bg=self.APP_BG_COLOR,
+            fg=self.FG_COLOR,
+        )
+
+        # Default: only show Current and Total centered
+        self.current_label.grid(row=0, column=0, padx=(0, 16))
+        self.total_label.grid(row=0, column=1)
 
         self.component_var = tk.StringVar(value="")
         self.component_label = tk.Label(
@@ -302,24 +338,71 @@ class FastCadReviewerApp:
 
         tk.Label(
             container,
-            text="Copy DESCRIPTION and USAGE columns from the PARTS LIST of the FastCAD drawing below:",
+            text="Copy QTY, DESCRIPTION, and USAGE columns from the PARTS LIST of the FastCAD drawing below:",
             anchor="w",
             bg=self.APP_BG_COLOR,
             fg=self.MUTED_FG_COLOR,
             font=self.FONT_SUBTITLE,
         ).pack(fill=tk.X, pady=(0, 6))
 
-        left = tk.Frame(container, bg=self.PANEL_ALT_BG_COLOR)
-        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
+        # Inner frame uses grid so we can assign column weights (10% / 45% / 45%).
+        panes = tk.Frame(container, bg=self.APP_BG_COLOR)
+        panes.pack(fill=tk.BOTH, expand=True)
+        # Keep a reference so the resize handler can update column min-sizes.
+        self.panes = panes
+        panes.columnconfigure(0, weight=2, minsize=0)  # QTY  — 10%
+        panes.columnconfigure(1, weight=9, minsize=0)  # DESC — 45%
+        panes.columnconfigure(2, weight=9, minsize=0)  # USAGE— 45%
+        panes.rowconfigure(0, weight=1)
+        # Enforce proportional column sizes at small widths by recalculating
+        # and applying pixel min-sizes when the panes frame is resized.
+        panes.bind("<Configure>", self._on_panes_resize)
+
+        # --- QTY pane ---
+        qty_frame = tk.Frame(panes, bg=self.PANEL_ALT_BG_COLOR)
+        qty_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        qty_frame.rowconfigure(1, weight=1)
+        qty_frame.columnconfigure(0, weight=1)
         tk.Label(
-            left,
+            qty_frame,
+            text="QTY",
+            bg=self.PANEL_ALT_BG_COLOR,
+            fg=self.BTN_TEXT_COLOR,
+            font=self.FONT_UI_BOLD,
+        ).grid(row=0, column=0, sticky="w", padx=8, pady=(8, 4))
+        self.qty_text = tk.Text(
+            qty_frame,
+            wrap=tk.NONE,
+            height=20,
+            bg=self.INPUT_BG_COLOR,
+            fg=self.FG_COLOR,
+            insertbackground=self.FG_COLOR,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground=self.BORDER_COLOR,
+            highlightcolor=self.ACCENT_COLOR,
+            selectbackground=self.SELECT_BG_COLOR,
+            font=("Consolas", 11),
+            padx=8,
+            pady=8,
+        )
+        self.qty_text.grid(row=1, column=0, sticky="nsew")
+        self.qty_text.tag_configure("current_line", background=self.ROW_HIGHLIGHT_COLOR)
+
+        # --- DESCRIPTION pane ---
+        desc_frame = tk.Frame(panes, bg=self.PANEL_ALT_BG_COLOR)
+        desc_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 6))
+        desc_frame.rowconfigure(1, weight=1)
+        desc_frame.columnconfigure(0, weight=1)
+        tk.Label(
+            desc_frame,
             text="DESCRIPTION",
             bg=self.PANEL_ALT_BG_COLOR,
             fg=self.BTN_TEXT_COLOR,
             font=self.FONT_UI_BOLD,
-        ).pack(anchor="w", padx=8, pady=(8, 4))
+        ).grid(row=0, column=0, sticky="w", padx=8, pady=(8, 4))
         self.desc_text = tk.Text(
-            left,
+            desc_frame,
             wrap=tk.NONE,
             height=20,
             bg=self.INPUT_BG_COLOR,
@@ -334,20 +417,23 @@ class FastCadReviewerApp:
             padx=8,
             pady=8,
         )
-        self.desc_text.pack(fill=tk.BOTH, expand=True)
+        self.desc_text.grid(row=1, column=0, sticky="nsew")
         self.desc_text.tag_configure("current_line", background=self.ROW_HIGHLIGHT_COLOR)
 
-        right = tk.Frame(container, bg=self.PANEL_ALT_BG_COLOR)
-        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(6, 0))
+        # --- USAGE pane ---
+        usage_frame = tk.Frame(panes, bg=self.PANEL_ALT_BG_COLOR)
+        usage_frame.grid(row=0, column=2, sticky="nsew")
+        usage_frame.rowconfigure(1, weight=1)
+        usage_frame.columnconfigure(0, weight=1)
         tk.Label(
-            right,
+            usage_frame,
             text="USAGE",
             bg=self.PANEL_ALT_BG_COLOR,
             fg=self.BTN_TEXT_COLOR,
             font=self.FONT_UI_BOLD,
-        ).pack(anchor="w", padx=8, pady=(8, 4))
+        ).grid(row=0, column=0, sticky="w", padx=8, pady=(8, 4))
         self.place_text = tk.Text(
-            right,
+            usage_frame,
             wrap=tk.NONE,
             height=20,
             bg=self.INPUT_BG_COLOR,
@@ -362,7 +448,7 @@ class FastCadReviewerApp:
             padx=8,
             pady=8,
         )
-        self.place_text.pack(fill=tk.BOTH, expand=True)
+        self.place_text.grid(row=1, column=0, sticky="nsew")
         self.place_text.tag_configure("current_line", background=self.ROW_HIGHLIGHT_COLOR)
 
         bold_font = tkfont.Font(font=self.place_text.cget("font")).copy()
@@ -372,27 +458,51 @@ class FastCadReviewerApp:
         self._bind_synchronized_scroll()
 
     def _bind_synchronized_scroll(self) -> None:
-        """Keep both text panes scrolled to the same vertical position."""
+        """Keep all three text panes scrolled to the same vertical position."""
         self.syncing_scroll = False
         for event in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-            self.desc_text.bind(event, self._on_desc_scroll)
-            self.place_text.bind(event, self._on_place_scroll)
+            self.qty_text.bind(event, self._on_scroll)
+            self.desc_text.bind(event, self._on_scroll)
+            self.place_text.bind(event, self._on_scroll)
 
-    def _on_desc_scroll(self, _event: tk.Event) -> None:
-        if not self.syncing_scroll:
-            self.syncing_scroll = True
-            try:
-                self.root.after(5, lambda: self.place_text.yview_moveto(self.desc_text.yview()[0]))
-            finally:
-                self.syncing_scroll = False
+    def _on_panes_resize(self, event: tk.Event) -> None:
+        """Recalculate and enforce column min-sizes so QTY stays ~10% at all widths.
 
-    def _on_place_scroll(self, _event: tk.Event) -> None:
-        if not self.syncing_scroll:
-            self.syncing_scroll = True
-            try:
-                self.root.after(5, lambda: self.desc_text.yview_moveto(self.place_text.yview()[0]))
-            finally:
-                self.syncing_scroll = False
+        Tk grid weight allocation can cause very narrow columns at small overall
+        sizes. To keep relative sizing stable we compute target pixel widths and
+        set `minsize` on each column accordingly. This method is lightweight
+        and safe to call frequently from the configure event.
+        """
+        try:
+            total_w = max(event.width, 1)
+            # Desired proportions: 2 / 9 / 9 => total 20
+            total_weight = 2 + 9 + 9
+            w0 = int(round(total_w * 2 / total_weight))
+            w1 = int(round(total_w * 9 / total_weight))
+            w2 = total_w - (w0 + w1)
+            # Apply minimum sizes to preserve proportions when the window is small.
+            self.panes.columnconfigure(0, minsize=w0)
+            self.panes.columnconfigure(1, minsize=w1)
+            self.panes.columnconfigure(2, minsize=w2)
+        except Exception:
+            # Guard against unexpected widget state during teardown.
+            pass
+
+    def _on_scroll(self, _event: tk.Event) -> None:
+        """Sync all panes after any one scrolls."""
+        if self.syncing_scroll:
+            return
+        self.syncing_scroll = True
+        try:
+            # Read the scroll position of whichever pane just moved
+            # by asking the event widget indirectly via after().
+            def _sync():
+                pos = self.desc_text.yview()[0]
+                self.qty_text.yview_moveto(pos)
+                self.place_text.yview_moveto(pos)
+            self.root.after(5, _sync)
+        finally:
+            self.syncing_scroll = False
 
     # ------------------------------------------------------------------
     # Hotkey management
@@ -598,6 +708,7 @@ class FastCadReviewerApp:
         # window targeting cannot change mid-run.
         text_state = tk.DISABLED if running else tk.NORMAL
         entry_state = "readonly" if running else tk.NORMAL
+        self.qty_text.config(state=text_state)
         self.desc_text.config(state=text_state)
         self.place_text.config(state=text_state)
         self.window_entry.config(state=entry_state)
@@ -828,10 +939,13 @@ class FastCadReviewerApp:
 
     def _update_status_labels(self) -> None:
         if not self.sequence or self.current_index < 0:
-            self.progress_var.set("")
+            self.expected_qty_var.set("")
+            self.current_var.set("")
+            self.total_var.set("")
             self.component_var.set("")
             self.description_var.set("")
             self._set_status_highlight(False)
+            self._set_qty_mismatch_highlight(False)
             self._clear_highlights()
             return
         group_idx, comp = self.sequence[self.current_index]
@@ -841,10 +955,26 @@ class FastCadReviewerApp:
         within_pos = sum(1 for i in range(self.current_index + 1) if self.sequence[i][0] == group_idx)
         group_total = sum(1 for g, _ in self.sequence if g == group_idx)
 
-        self.progress_var.set(
-            f"Current: {within_pos}/{group_total}     Total: {self.current_index + 1}/{len(self.sequence)}"
-        )
+        # Read the QTY value for this line from the QTY pane.
+        line_no = group.source_line_index + 1
+        raw_qty = self.qty_text.get(f"{line_no}.0", f"{line_no}.end").strip()
+        expected_qty: Optional[int] = None
+        try:
+            expected_qty = int(raw_qty)
+        except (ValueError, TypeError):
+            pass  # leave expected_qty as None if the cell is blank or non-numeric
+
+        if expected_qty is not None:
+            self.expected_qty_var.set(f"Expected QTY: {expected_qty}")
+            mismatch = expected_qty != group_total
+        else:
+            self.expected_qty_var.set("Expected QTY: —")
+            mismatch = False
+
+        self.current_var.set(f"Current: {within_pos}/{group_total}")
+        self.total_var.set(f"Total: {self.current_index + 1}/{len(self.sequence)}")
         self._set_status_highlight(True)
+        self._set_qty_mismatch_highlight(mismatch)
         self.component_var.set(comp)
         self.description_var.set(_parse_description(group.description))
         self._highlight_line(group.source_line_index, comp)
@@ -854,7 +984,41 @@ class FastCadReviewerApp:
         self.component_label.config(background=bg)
         self.description_label.config(background=bg)
 
+    MISMATCH_BG_COLOR = "#8B0000"  # dark red — visible but not garish
+
+    def _set_qty_mismatch_highlight(self, mismatch: bool) -> None:
+        """Red background on Expected QTY and Current labels when counts differ."""
+        if mismatch:
+            bg = self.MISMATCH_BG_COLOR
+        else:
+            bg = self.APP_BG_COLOR
+
+        # When mismatch is True, show Expected QTY to the left of Current and
+        # shift Current/Total right. When False, hide Expected and pack
+        # Current/Total left again.
+        try:
+            if mismatch:
+                # Place expected at column 0, move current->1, total->2
+                self.expected_qty_label.grid(row=0, column=0, padx=(0, 16))
+                self.current_label.grid_configure(row=0, column=1)
+                self.total_label.grid_configure(row=0, column=2)
+                self.expected_qty_label.config(background=bg)
+                self.current_label.config(background=bg)
+                # keep total with normal background
+                self.total_label.config(background=self.APP_BG_COLOR)
+            else:
+                # Hide expected and collapse current/total to cols 0/1.
+                self.expected_qty_label.grid_remove()
+                self.current_label.grid_configure(row=0, column=0)
+                self.total_label.grid_configure(row=0, column=1)
+                self.current_label.config(background=self.APP_BG_COLOR)
+                self.total_label.config(background=self.APP_BG_COLOR)
+        except tk.TclError:
+            # Defensive: ignore grid errors if widgets aren't mapped yet.
+            pass
+
     def _clear_highlights(self) -> None:
+        self.qty_text.tag_remove("current_line", "1.0", tk.END)
         self.desc_text.tag_remove("current_line", "1.0", tk.END)
         self.place_text.tag_remove("current_line", "1.0", tk.END)
         self.place_text.tag_remove("current_component", "1.0", tk.END)
@@ -866,6 +1030,7 @@ class FastCadReviewerApp:
         start = f"{line_no}.0"
         end = f"{line_no}.end+1c"
 
+        self.qty_text.tag_add("current_line", start, end)
         self.desc_text.tag_add("current_line", start, end)
         self.place_text.tag_add("current_line", start, end)
 
@@ -905,6 +1070,7 @@ class FastCadReviewerApp:
                             )
                         break
 
+        self.qty_text.see(start)
         self.desc_text.see(start)
         self.place_text.see(start)
 
