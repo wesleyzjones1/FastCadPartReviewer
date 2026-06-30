@@ -50,6 +50,7 @@ class FastCadController:
         self.pending_zout_sent: bool = False
         self.pending_zout_sent_at: float = 0.0
         self.pending_wait_for_retry_dialog: bool = False
+        self.auto_enter_on_multiple_matches: bool = True
 
     # ------------------------------------------------------------------
     # Public API
@@ -125,6 +126,8 @@ class FastCadController:
             self.pending_saw_dialog = True
             # Move selection up once so the user starts from the previous row.
             pyautogui.press("up")
+            if self.auto_enter_on_multiple_matches:
+                pyautogui.press("enter")
             return (
                 f"Multiple matches for {self.pending_component}. "
                 "Select the correct item in FastCAD; ZOUT runs after the dialog closes."

@@ -116,15 +116,33 @@ class FastCadReviewerApp:
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
+        self._build_menu()
         self._build_header()
         self._build_config_bar()
+        self._build_settings_panel()
         self._build_instructions()
         self._build_status_frame()
         self._build_text_panes()
 
+    def _build_menu(self) -> None:
+        menubar = tk.Menu(self.root)
+        settings_menu = tk.Menu(menubar, tearoff=0)
+        settings_menu.add_command(label="Show/Hide Settings", command=self._toggle_settings_panel)
+        menubar.add_cascade(label="Settings", menu=settings_menu)
+        self.root.config(menu=menubar)
+
+    def _toggle_settings_panel(self) -> None:
+        if self.settings_frame.winfo_ismapped():
+            self.settings_frame.pack_forget()
+        else:
+            self.settings_frame.pack(fill=tk.X, padx=12, pady=(4, 8), before=self.instructions_label)
+
     def _build_header(self) -> None:
         frame = tk.Frame(self.root, bg=self.APP_BG_COLOR)
         frame.pack(fill=tk.X, padx=12, pady=(10, 2))
+
+        frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=0)
 
         tk.Label(
             frame,
@@ -133,17 +151,79 @@ class FastCadReviewerApp:
             fg=self.FG_COLOR,
             font=self.FONT_TITLE,
             anchor="w",
-        ).pack(fill=tk.X)
+        ).grid(row=0, column=0, sticky="w")
+
+        tk.Label(
+            frame,
+            text="v1.0",
+            bg=self.APP_BG_COLOR,
+            fg=self.MUTED_FG_COLOR,
+            font=self.FONT_UI_BOLD,
+            anchor="e",
+        ).grid(row=0, column=1, sticky="e", padx=(12, 0), pady=(6, 0))
+
         tk.Frame(self.root, bg=self.USC_RED, height=4).pack(fill=tk.X, pady=(4, 4))
 
     def _build_config_bar(self) -> None:
         bar = tk.Frame(self.root, bg=self.PANEL_ALT_BG_COLOR, padx=12, pady=10)
         bar.pack(fill=tk.X, padx=12, pady=(4, 8))
 
-        tk.Label(bar, text="FastCAD window title contains:", bg=self.PANEL_ALT_BG_COLOR, fg=self.FG_COLOR, font=self.FONT_UI).pack(side=tk.LEFT)
+        controls = tk.Frame(bar, bg=self.PANEL_ALT_BG_COLOR)
+        controls.pack(side=tk.LEFT, anchor="w")
+
+        self.start_btn = tk.Button(
+            controls,
+            text="Start",
+            width=14,
+            command=self.start_review,
+            bg=self.ACCENT_COLOR,
+            fg=self.START_BTN_TEXT_COLOR,
+            activebackground=self.ACCENT_PRESS_COLOR,
+            activeforeground=self.START_BTN_TEXT_COLOR,
+            relief=tk.FLAT,
+            bd=0,
+            cursor="hand2",
+            font=self.FONT_UI_BOLD,
+        )
+        self.start_btn.pack(side=tk.LEFT, pady=(2, 0))
+
+        self.reset_btn = tk.Button(
+            controls,
+            text="Reset",
+            width=10,
+            command=self.reset_review,
+            state=tk.DISABLED,
+            bg=self.RESET_BTN_COLOR,
+            fg=self.BTN_TEXT_COLOR,
+            activebackground=self.RESET_BTN_PRESS_COLOR,
+            activeforeground=self.BTN_TEXT_COLOR,
+            disabledforeground=self.DISABLED_FG_COLOR,
+            relief=tk.FLAT,
+            bd=0,
+            cursor="hand2",
+            font=self.FONT_UI_BOLD,
+        )
+        self.reset_btn.pack(side=tk.LEFT, padx=(8, 0), pady=(2, 0))
+
+        # Auto-enter checkbox moved to Settings panel (kept as var/widget attributes)
+
+    def _build_settings_panel(self) -> None:
+        self.settings_frame = tk.LabelFrame(
+            self.root,
+            text="Settings",
+            padx=10,
+            pady=8,
+            bg=self.PANEL_ALT_BG_COLOR,
+            fg=self.FG_COLOR,
+            font=self.FONT_UI_BOLD,
+            relief=tk.FLAT,
+            bd=1,
+        )
+
+        tk.Label(self.settings_frame, text="FastCAD window title contains:", bg=self.PANEL_ALT_BG_COLOR, fg=self.FG_COLOR, font=self.FONT_UI).pack(side=tk.LEFT)
         self.window_hint_var = tk.StringVar(value=".FCW")
         self.window_entry = tk.Entry(
-            bar,
+            self.settings_frame,
             textvariable=self.window_hint_var,
             width=24,
             bg=self.INPUT_BG_COLOR,
@@ -160,10 +240,10 @@ class FastCadReviewerApp:
         )
         self.window_entry.pack(side=tk.LEFT, padx=(8, 16), ipady=3)
 
-        tk.Label(bar, text="Event loop (ms):", bg=self.PANEL_ALT_BG_COLOR, fg=self.FG_COLOR, font=self.FONT_UI).pack(side=tk.LEFT)
+        tk.Label(self.settings_frame, text="Event loop (ms):", bg=self.PANEL_ALT_BG_COLOR, fg=self.FG_COLOR, font=self.FONT_UI).pack(side=tk.LEFT)
         self.event_loop_ms_var = tk.StringVar(value=str(self.DEFAULT_EVENT_LOOP_MS))
-        event_loop_entry = tk.Entry(
-            bar,
+        self.event_loop_entry = tk.Entry(
+            self.settings_frame,
             textvariable=self.event_loop_ms_var,
             width=6,
             bg=self.INPUT_BG_COLOR,
@@ -175,12 +255,12 @@ class FastCadReviewerApp:
             highlightcolor=self.ACCENT_COLOR,
             font=self.FONT_UI,
         )
-        event_loop_entry.pack(side=tk.LEFT, padx=(8, 16), ipady=3)
+        self.event_loop_entry.pack(side=tk.LEFT, padx=(8, 16), ipady=3)
 
-        tk.Label(bar, text="Zoom value:", bg=self.PANEL_ALT_BG_COLOR, fg=self.FG_COLOR, font=self.FONT_UI).pack(side=tk.LEFT)
+        tk.Label(self.settings_frame, text="Zoom value:", bg=self.PANEL_ALT_BG_COLOR, fg=self.FG_COLOR, font=self.FONT_UI).pack(side=tk.LEFT)
         self.zoom_value_var = tk.StringVar(value="3")
-        zoom_entry = tk.Entry(
-            bar,
+        self.zoom_entry = tk.Entry(
+            self.settings_frame,
             textvariable=self.zoom_value_var,
             width=8,
             bg=self.INPUT_BG_COLOR,
@@ -192,57 +272,43 @@ class FastCadReviewerApp:
             highlightcolor=self.ACCENT_COLOR,
             font=self.FONT_UI,
         )
-        zoom_entry.pack(side=tk.LEFT, padx=(8, 16), ipady=3)
+        self.zoom_entry.pack(side=tk.LEFT, padx=(8, 16), ipady=3)
 
-        self.start_btn = tk.Button(
-            bar,
-            text="Start",
-            width=14,
-            command=self.start_review,
-            bg=self.ACCENT_COLOR,
-            fg=self.START_BTN_TEXT_COLOR,
-            activebackground=self.ACCENT_PRESS_COLOR,
-            activeforeground=self.START_BTN_TEXT_COLOR,
+        # Auto-enter multiple-match option (moved here from the top config bar)
+        self.auto_enter_multiple_var = tk.BooleanVar(value=True)
+        self.auto_enter_multiple_chk = tk.Checkbutton(
+            self.settings_frame,
+            text="Auto-Enter Multiple Match",
+            variable=self.auto_enter_multiple_var,
+            onvalue=True,
+            offvalue=False,
+            bg=self.PANEL_ALT_BG_COLOR,
+            fg=self.FG_COLOR,
+            activebackground=self.PANEL_ALT_BG_COLOR,
+            activeforeground=self.FG_COLOR,
+            selectcolor=self.INPUT_BG_COLOR,
+            font=self.FONT_UI,
             relief=tk.FLAT,
             bd=0,
+            highlightthickness=0,
             cursor="hand2",
-            font=self.FONT_UI_BOLD,
         )
-        self.start_btn.pack(side=tk.LEFT)
-
-        self.reset_btn = tk.Button(
-            bar,
-            text="Reset",
-            width=10,
-            command=self.reset_review,
-            state=tk.DISABLED,
-            bg=self.RESET_BTN_COLOR,
-            fg=self.BTN_TEXT_COLOR,
-            activebackground=self.RESET_BTN_PRESS_COLOR,
-            activeforeground=self.BTN_TEXT_COLOR,
-            disabledforeground=self.DISABLED_FG_COLOR,
-            relief=tk.FLAT,
-            bd=0,
-            cursor="hand2",
-            font=self.FONT_UI_BOLD,
-        )
-        self.reset_btn.pack(side=tk.LEFT, padx=(8, 0))
+        self.auto_enter_multiple_chk.pack(side=tk.LEFT, padx=(8, 0), pady=(4, 0), anchor="s")
 
     def _build_instructions(self) -> None:
         text = (
             "SPACE = next  |  A = previous  |  D = next after comma  |  "
             "S = next line  |  W = previous line  |  ESC = stop"
         )
-        tk.Label(
+        self.instructions_label = tk.Label(
             self.root,
             text=text,
             anchor="w",
             bg=self.APP_BG_COLOR,
             fg=self.MUTED_FG_COLOR,
             font=self.FONT_SUBTITLE,
-        ).pack(
-            fill=tk.X, padx=12, pady=(0, 8)
         )
+        self.instructions_label.pack(fill=tk.X, padx=12, pady=(0, 8))
 
     def _build_status_frame(self) -> None:
         frame = tk.LabelFrame(
@@ -687,6 +753,7 @@ class FastCadReviewerApp:
         self.sequence_segment_ids = segment_ids
         self.current_index = 0
         self.paused = False
+        self.fastcad.auto_enter_on_multiple_matches = bool(self.auto_enter_multiple_var.get())
         self._set_running(True)
         self._highlight_qty_mismatches()
         self._update_status_labels()
@@ -717,6 +784,7 @@ class FastCadReviewerApp:
         if not self.paused or not self.sequence or self.current_index < 0:
             return
         self.paused = False
+        self.fastcad.auto_enter_on_multiple_matches = bool(self.auto_enter_multiple_var.get())
         self._set_running(True)
         self.status_var.set(f"Resumed ({trigger}). Moving to next component.")
         self._move_next()
@@ -735,6 +803,9 @@ class FastCadReviewerApp:
         self.desc_text.config(state=text_state)
         self.place_text.config(state=text_state)
         self.window_entry.config(state=entry_state)
+        self.event_loop_entry.config(state=entry_state)
+        self.zoom_entry.config(state=entry_state)
+        self.auto_enter_multiple_chk.config(state=tk.DISABLED if running else tk.NORMAL)
 
         if running:
             self._enable_running_hotkeys()
