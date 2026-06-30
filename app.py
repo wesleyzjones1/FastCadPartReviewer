@@ -294,6 +294,16 @@ class FastCadReviewerApp:
             cursor="hand2",
         )
         self.auto_enter_multiple_chk.pack(side=tk.LEFT, padx=(8, 0), pady=(4, 0), anchor="s")
+        # Keep FastCAD auto-enter flag in sync live so the user may toggle it
+        # while a review is running.
+        try:
+            # trace_add is available on modern Tkinter; fall back to trace for older.
+            self.auto_enter_multiple_var.trace_add("write", lambda *a: self._on_auto_enter_changed())
+        except Exception:
+            try:
+                self.auto_enter_multiple_var.trace("w", lambda *a: self._on_auto_enter_changed())
+            except Exception:
+                pass
 
     def _build_instructions(self) -> None:
         text = (
@@ -795,17 +805,20 @@ class FastCadReviewerApp:
         self.left_alt_ready = True
         self.fastcad.clear_pending()
 
-        # Lock editable inputs while actively reviewing so parsed content and
-        # window targeting cannot change mid-run.
+        # Lock editable text panes while running, but keep settings editable
+        # so the user may tweak behavior without stopping the review.
         text_state = tk.DISABLED if running else tk.NORMAL
-        entry_state = "readonly" if running else tk.NORMAL
         self.qty_text.config(state=text_state)
         self.desc_text.config(state=text_state)
         self.place_text.config(state=text_state)
-        self.window_entry.config(state=entry_state)
-        self.event_loop_entry.config(state=entry_state)
-        self.zoom_entry.config(state=entry_state)
-        self.auto_enter_multiple_chk.config(state=tk.DISABLED if running else tk.NORMAL)
+        # Keep entries and the auto-enter checkbox enabled at all times.
+        try:
+            self.window_entry.config(state=tk.NORMAL)
+            self.event_loop_entry.config(state=tk.NORMAL)
+            self.zoom_entry.config(state=tk.NORMAL)
+            self.auto_enter_multiple_chk.config(state=tk.NORMAL)
+        except Exception:
+            pass
 
         if running:
             self._enable_running_hotkeys()
@@ -1042,6 +1055,13 @@ class FastCadReviewerApp:
         g = round(a_g + (b_g - a_g) * t)
         b = round(a_b + (b_b - a_b) * t)
         return f"#{r:02x}{g:02x}{b:02x}"
+
+    def _on_auto_enter_changed(self, *args) -> None:
+        """Callback when the Auto-Enter checkbox is toggled — update controller live."""
+        try:
+            self.fastcad.auto_enter_on_multiple_matches = bool(self.auto_enter_multiple_var.get())
+        except Exception:
+            pass
 
     def _get_zoom_value(self) -> Optional[float]:
         try:

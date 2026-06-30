@@ -127,7 +127,9 @@ class FastCadController:
             # Move selection up once so the user starts from the previous row.
             pyautogui.press("up")
             if self.auto_enter_on_multiple_matches:
-                pyautogui.press("enter")
+                # Some FastCAD flows accept SPACE to confirm selection — use
+                # SPACE when auto-enter is enabled to match user preference.
+                pyautogui.press("space")
             return (
                 f"Multiple matches for {self.pending_component}. "
                 "Select the correct item in FastCAD; ZOUT runs after the dialog closes."
